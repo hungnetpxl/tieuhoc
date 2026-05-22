@@ -294,3 +294,28 @@ drop trigger if exists on_child_profile_created on public.th_children_profiles;
 create trigger on_child_profile_created
     after insert on public.th_children_profiles
     for each row execute procedure public.handle_new_child_profile();
+
+
+-- TRIGGER TỰ ĐỘNG TẠO PROFILE KHI ĐĂNG KÝ USER MỚI QUA SUPABASE AUTH
+create or replace function public.handle_new_parent_profile()
+returns trigger as $$
+begin
+    insert into public.th_parent_profiles (id, email, full_name)
+    values (
+        new.id,
+        new.email,
+        coalesce(new.raw_user_meta_data->>'full_name', 'Phụ Huynh')
+    )
+    on conflict (id) do update
+    set email = excluded.email,
+        full_name = coalesce(excluded.full_name, public.th_parent_profiles.full_name);
+    return new;
+end;
+$$ language plpgsql security definer;
+
+-- Drop trigger trước khi tạo lại để tránh lỗi
+drop trigger if exists on_parent_user_created on auth.users;
+
+create trigger on_parent_user_created
+    after insert on auth.users
+    for each row execute procedure public.handle_new_parent_profile();

@@ -23,9 +23,22 @@ export const supabase = isSupabaseConfigured
 // Biến trạng thái có thể thay đổi động trong phiên hoạt động
 export let isSupabaseActive = isSupabaseConfigured;
 
+// Tập hợp các listener để cập nhật giao diện khi chuyển đổi trạng thái cơ sở dữ liệu
+const dbModeListeners = new Set<(active: boolean) => void>();
+
+export const addDbModeListener = (listener: (active: boolean) => void) => {
+  dbModeListeners.add(listener);
+  // Gọi ngay lập tức với giá trị hiện tại để khởi tạo đồng bộ
+  listener(isSupabaseActive);
+  return () => {
+    dbModeListeners.delete(listener);
+  };
+};
+
 export const setSupabaseActive = (active: boolean) => {
   isSupabaseActive = active;
   console.log(`🔌 Chế độ hoạt động đã được chuyển sang: ${active ? '🟢 Supabase Online' : '💾 Local Mock Offline'}`);
+  dbModeListeners.forEach(l => l(active));
 };
 
 console.log(
@@ -45,8 +58,8 @@ async function runWithFallback<T>(
       return await supabaseCall();
     } catch (err: any) {
       console.warn(`⚠️ Supabase error in apiService.${methodName}, switching to Local Mock:`, err);
-      // Vô hiệu hóa Supabase cho phần còn lại của phiên làm việc này để tăng hiệu năng và tránh lặp lỗi
-      isSupabaseActive = false;
+      // Vô hiệu hóa Supabase cho phần còn lại của phiên làm việc này để tăng hiệu năng và tránh lặp lỗi và kích hoạt listeners
+      setSupabaseActive(false);
       return await localFallback();
     }
   }
@@ -279,6 +292,11 @@ export const apiService = {
         });
 
         if (error) {
+          // Nếu lỗi do email chưa kích hoạt, nổ lỗi để chuyển sang Local Mock
+          if (error.message?.includes('Email not confirmed') || error.message?.includes('confirm')) {
+            throw new Error('Email chưa được xác nhận trên hệ thống đám mây.');
+          }
+
           // Nếu chưa có tài khoản, tự động tạo mới
           const signUpRes = await supabase!.auth.signUp({
             email,
@@ -287,14 +305,18 @@ export const apiService = {
           });
           if (signUpRes.error) throw signUpRes.error;
           
+          if (!signUpRes.data.user) {
+            throw new Error('Email đã được đăng ký trên đám mây nhưng cần xác thực qua email kích hoạt.');
+          }
+          
           const newParent: ParentProfile = {
-            id: signUpRes.data.user!.id,
-            email: signUpRes.data.user!.email!,
+            id: signUpRes.data.user.id,
+            email: signUpRes.data.user.email!,
             full_name: 'Phụ Huynh',
-            created_at: signUpRes.data.user!.created_at || new Date().toISOString()
+            created_at: signUpRes.data.user.created_at || new Date().toISOString()
           };
 
-          // Đồng thời chèn dữ liệu vào bảng public.th_parent_profiles
+          // Đồng thời chèn dữ liệu vào bảng public.th_parent_profiles (cũng sẽ tự tạo qua Postgres Trigger nhưng chèn thêm để chắc chắn)
           try {
             await supabase!.from('th_parent_profiles').insert([newParent]);
           } catch (insertErr) {
@@ -302,6 +324,10 @@ export const apiService = {
           }
           
           return newParent;
+        }
+
+        if (!data.user) {
+          throw new Error('Đăng nhập thành công nhưng không lấy được thông tin người dùng.');
         }
 
         return {
@@ -339,12 +365,16 @@ export const apiService = {
         });
         if (error) throw error;
         
+        if (!data.user) {
+          throw new Error('Đăng ký thành công nhưng email đã tồn tại hoặc cần kích hoạt để sử dụng chế độ Đám mây.');
+        }
+
         // Đồng thời chèn dữ liệu vào bảng public.th_parent_profiles
         const newParent: ParentProfile = {
-          id: data.user!.id,
-          email: data.user!.email!,
+          id: data.user.id,
+          email: data.user.email!,
           full_name: fullName,
-          created_at: data.user!.created_at || new Date().toISOString()
+          created_at: data.user.created_at || new Date().toISOString()
         };
 
         try {

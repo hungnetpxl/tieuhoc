@@ -5,7 +5,7 @@ import { Button3D } from '../components/Button3D';
 import { DinoPet } from '../components/DinoPet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { slideUpVariants, popInVariants } from '../animations/presets';
-import { isSupabaseActive, setSupabaseActive } from '../services/apiService';
+import { isSupabaseActive, setSupabaseActive, addDbModeListener } from '../services/apiService';
 
 export const AuthPage: React.FC = () => {
   const navigate = useNavigate();
@@ -36,7 +36,6 @@ export const AuthPage: React.FC = () => {
   const toggleDatabaseMode = () => {
     const nextState = !supabaseActive;
     setSupabaseActive(nextState);
-    setSupabaseActiveState(nextState);
   };
 
   // Parent Gate Lock (Cổng phụ huynh)
@@ -47,9 +46,15 @@ export const AuthPage: React.FC = () => {
 
   useEffect(() => {
     initialize();
-    // Đồng bộ lại trạng thái database khi trang mount
-    setSupabaseActiveState(isSupabaseActive);
   }, [initialize]);
+
+  useEffect(() => {
+    // Đăng ký lắng nghe sự thay đổi của chế độ DB từ API Service
+    const unsubscribe = addDbModeListener((active) => {
+      setSupabaseActiveState(active);
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated && children.length > 0) {
@@ -193,9 +198,17 @@ export const AuthPage: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-5 py-3.5 border-4 border-[#e5e5e5] hover:border-[#1cb0f6] focus:border-[#1cb0f6] rounded-2xl outline-none font-bold text-lg transition-colors bg-[#f7f7f7]"
                 />
-                <p className="text-xs text-[#888] font-bold mt-1.5 italic">
-                  * Chạy Offline: Mọi email đều đăng nhập được ngay lập tức!
-                </p>
+                {supabaseActive ? (
+                  <div className="mt-2 p-3 bg-[#e3f2fd] border-2 border-[#90caf9] rounded-2xl text-xs font-bold text-[#1976d2] leading-relaxed">
+                    💡 <b>Chế độ Đám mây đang bật:</b> Nếu đăng ký email mới, vui lòng kiểm tra Hộp thư để click link kích hoạt. 
+                    <br />
+                    <span className="text-[#e65100]">👉 Nếu muốn học ngay không cần kích hoạt, hãy click nút <b>Đám Mây</b> ở cuối để đổi sang <b>Máy Bé (Offline)</b>!</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[#888] font-bold mt-1.5 italic">
+                    * Chạy Offline: Mọi email đều đăng nhập được ngay lập tức! Dữ liệu lưu trên máy bé.
+                  </p>
+                )}
               </div>
 
               <Button3D variant="primary" type="submit" size="lg" className="w-full text-lg mt-2" disabled={isLoading}>
