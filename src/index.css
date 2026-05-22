@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+/* NHẬP FONT CHỮ NUNITO SIÊU THÂN THIỆN VÀ DỄ ĐỌC CHO TRẺ EM */
+
+:root {
+  font-family: 'Nunito', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light;
+  background-color: #fcfcfc;
+  color: #3c3c3c;
+  
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: 'Nunito', system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+}
+
+/* HIỆU ỨNG GLO BALL PHÁO BÔNG HÀO QUANG CHO MAP */
+.bg-radial-gradient {
+  background: radial-gradient(circle, rgba(255,235,59,0.3) 0%, rgba(255,255,255,1) 70%);
+}
+
+/* HOẠT ẢNH XOAY TIA SÁNG */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 20s linear infinite;
+}
+
+/* ĐỊNH DẠNG THANH CUỘN CUTE DÀNH CHO TRẺ EM */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ffc800;
+  border-radius: 10px;
+  border: 2px solid #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ffa31a;
+}
