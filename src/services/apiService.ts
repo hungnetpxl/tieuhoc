@@ -294,9 +294,9 @@ export const apiService = {
             created_at: signUpRes.data.user!.created_at || new Date().toISOString()
           };
 
-          // Đồng thời chèn dữ liệu vào bảng public.parent_profiles
+          // Đồng thời chèn dữ liệu vào bảng public.th_parent_profiles
           try {
-            await supabase!.from('parent_profiles').insert([newParent]);
+            await supabase!.from('th_parent_profiles').insert([newParent]);
           } catch (insertErr) {
             console.warn('Lỗi khi chèn profiles (có thể đã tồn tại hoặc do RLS):', insertErr);
           }
@@ -339,7 +339,7 @@ export const apiService = {
         });
         if (error) throw error;
         
-        // Đồng thời chèn dữ liệu vào bảng public.parent_profiles
+        // Đồng thời chèn dữ liệu vào bảng public.th_parent_profiles
         const newParent: ParentProfile = {
           id: data.user!.id,
           email: data.user!.email!,
@@ -348,7 +348,7 @@ export const apiService = {
         };
 
         try {
-          await supabase!.from('parent_profiles').insert([newParent]);
+          await supabase!.from('th_parent_profiles').insert([newParent]);
         } catch (insertErr) {
           console.warn('Lỗi khi chèn profiles:', insertErr);
         }
@@ -385,10 +385,10 @@ export const apiService = {
   getChildrenProfiles: async (parentId: string): Promise<ChildProfile[]> => {
     return runWithFallback(
       async () => {
-        const { data, error } = await supabase!
-          .from('children_profiles')
-          .select('*')
-          .eq('parent_id', parentId);
+          const { data, error } = await supabase!
+            .from('th_children_profiles')
+            .select('*')
+            .eq('parent_id', parentId);
         if (error) throw error;
         return data || [];
       },
@@ -414,11 +414,11 @@ export const apiService = {
 
     return runWithFallback(
       async () => {
-        const { data, error } = await supabase!
-          .from('children_profiles')
-          .insert([newChild])
-          .select()
-          .single();
+          const { data, error } = await supabase!
+            .from('th_children_profiles')
+            .insert([newChild])
+            .select()
+            .single();
         if (error) throw error;
         return data;
       },
@@ -438,12 +438,12 @@ export const apiService = {
   updateChildProfile: async (childId: string, fields: Partial<ChildProfile>): Promise<ChildProfile> => {
     return runWithFallback(
       async () => {
-        const { data, error } = await supabase!
-          .from('children_profiles')
-          .update(fields)
-          .eq('id', childId)
-          .select()
-          .single();
+          const { data, error } = await supabase!
+            .from('th_children_profiles')
+            .update(fields)
+            .eq('id', childId)
+            .select()
+            .single();
         if (error) throw error;
         return data;
       },
@@ -467,11 +467,11 @@ export const apiService = {
 
     return runWithFallback(
       async () => {
-        const { data, error } = await supabase!
-          .from('sessions')
-          .insert([newSession])
-          .select()
-          .single();
+          const { data, error } = await supabase!
+            .from('th_sessions')
+            .insert([newSession])
+            .select()
+            .single();
         if (error) throw error;
         return data;
       },
@@ -491,12 +491,12 @@ export const apiService = {
   updateSession: async (sessionId: string, fields: Partial<LearningSession>): Promise<LearningSession> => {
     return runWithFallback(
       async () => {
-        const { data, error } = await supabase!
-          .from('sessions')
-          .update(fields)
-          .eq('id', sessionId)
-          .select()
-          .single();
+          const { data, error } = await supabase!
+            .from('th_sessions')
+            .update(fields)
+            .eq('id', sessionId)
+            .select()
+            .single();
         if (error) throw error;
         return data;
       },
@@ -510,9 +510,9 @@ export const apiService = {
   recordQuestionHistory: async (entry: Omit<QuestionHistoryEntry, 'id' | 'created_at'>): Promise<void> => {
     return runWithFallback(
       async () => {
-        const { error } = await supabase!
-          .from('question_history')
-          .insert([entry]);
+          const { error } = await supabase!
+            .from('th_question_history')
+            .insert([entry]);
         if (error) throw error;
       },
       () => {
@@ -530,10 +530,10 @@ export const apiService = {
   getQuestionHistory: async (childId: string): Promise<QuestionHistoryEntry[]> => {
     return runWithFallback(
       async () => {
-        const { data, error } = await supabase!
-          .from('question_history')
-          .select('*')
-          .eq('child_id', childId)
+          const { data, error } = await supabase!
+            .from('th_question_history')
+            .select('*')
+            .eq('child_id', childId)
           .order('created_at', { ascending: false });
         if (error) throw error;
         return data || [];
@@ -548,10 +548,10 @@ export const apiService = {
   getMistakes: async (childId: string): Promise<ChildMistake[]> => {
     return runWithFallback(
       async () => {
-        const { data, error } = await supabase!
-          .from('mistakes')
-          .select('*')
-          .eq('child_id', childId);
+          const { data, error } = await supabase!
+            .from('th_mistakes')
+            .select('*')
+            .eq('child_id', childId);
         if (error) throw error;
         return data || [];
       },
@@ -575,19 +575,19 @@ export const apiService = {
         // Nếu RPC chưa được định nghĩa trên Supabase, dùng API chuẩn:
         if (error) {
           const { data: existing } = await supabase!
-            .from('mistakes')
+            .from('th_mistakes')
             .select('*')
             .match({ child_id: childId, math_type: mathType, number_a: numA, number_b: numB, operator: op })
             .maybeSingle();
 
           if (existing) {
             await supabase!
-              .from('mistakes')
+              .from('th_mistakes')
               .update({ wrong_count: existing.wrong_count + 1, last_attempt_correct: false, updated_at: new Date().toISOString() })
               .eq('id', existing.id);
           } else {
             await supabase!
-              .from('mistakes')
+              .from('th_mistakes')
               .insert([{
                 child_id: childId,
                 math_type: mathType,
@@ -611,7 +611,7 @@ export const apiService = {
     return runWithFallback(
       async () => {
         await supabase!
-          .from('mistakes')
+          .from('th_mistakes')
           .update({ last_attempt_correct: true, updated_at: new Date().toISOString() })
           .match({ child_id: childId, math_type: mathType, number_a: numA, number_b: numB, operator: op });
       },
@@ -626,7 +626,7 @@ export const apiService = {
     return runWithFallback(
       async () => {
         await supabase!
-          .from('mistakes')
+          .from('th_mistakes')
           .delete()
           .eq('child_id', childId);
       },
@@ -643,8 +643,8 @@ export const apiService = {
     return runWithFallback(
       async () => {
         const { data, error } = await supabase!
-          .from('children_badges')
-          .select('*, badge:badges(*)')
+          .from('th_children_badges')
+          .select('*, badge:th_badges(*)')
           .eq('child_id', childId);
         if (error) throw error;
         return data || [];
@@ -658,7 +658,7 @@ export const apiService = {
     return runWithFallback(
       async () => {
         const { data, error } = await supabase!
-          .from('children_badges')
+          .from('th_children_badges')
           .insert([{ child_id: childId, badge_id: badgeId }])
           .select()
           .single();
@@ -676,7 +676,7 @@ export const apiService = {
     return runWithFallback(
       async () => {
         const { data, error } = await supabase!
-          .from('statistics')
+          .from('th_statistics')
           .select('*')
           .eq('child_id', childId)
           .maybeSingle();
@@ -707,7 +707,7 @@ export const apiService = {
     return runWithFallback(
       async () => {
         const { data, error } = await supabase!
-          .from('statistics')
+          .from('th_statistics')
           .upsert([nextStats])
           .select()
           .single();
