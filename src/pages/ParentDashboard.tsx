@@ -275,7 +275,7 @@ export const ParentDashboard: React.FC = () => {
                   <input
                     type="number"
                     min="5"
-                    max="20"
+                    max="50"
                     value={qCount}
                     onChange={e => setQCount(parseInt(e.target.value) || 10)}
                     className="w-full px-3 py-2 border-2 border-[#e5e5e5] rounded-xl outline-none font-bold"
