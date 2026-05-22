@@ -16,12 +16,17 @@ const isSupabaseConfigured =
   !supabaseUrl.includes('your-supabase-url') &&
   !supabaseAnonKey.includes('your-supabase-anon-key');
 
-export const supabase = isSupabaseConfigured 
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+export let supabase: any = null;
+try {
+  if (isSupabaseConfigured) {
+    supabase = createClient(supabaseUrl, supabaseAnonKey);
+  }
+} catch (err) {
+  console.error("❌ Lỗi nghiêm trọng khi khởi tạo Supabase Client:", err);
+}
 
 // Biến trạng thái có thể thay đổi động trong phiên hoạt động
-export let isSupabaseActive = isSupabaseConfigured;
+export let isSupabaseActive = isSupabaseConfigured && supabase !== null;
 
 // Tập hợp các listener để cập nhật giao diện khi chuyển đổi trạng thái cơ sở dữ liệu
 const dbModeListeners = new Set<(active: boolean) => void>();
