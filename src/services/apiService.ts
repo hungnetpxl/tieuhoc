@@ -688,7 +688,7 @@ export const apiService = {
         const history = await apiService.getQuestionHistory(childId);
         const nextStats = AnalyticsEngine.aggregateStatistics(childId, history);
         const insertRes = await supabase!
-          .from('statistics')
+          .from('th_statistics')
           .insert([nextStats])
           .select()
           .single();
