@@ -186,7 +186,7 @@ export const AuthPage: React.FC = () => {
                 </p>
               </div>
 
-              <Button3D variant="primary" size="lg" className="w-full text-lg mt-2" disabled={isLoading}>
+              <Button3D variant="primary" type="submit" size="lg" className="w-full text-lg mt-2" disabled={isLoading}>
                 {isLoading ? 'Đang tải...' : isRegistering ? 'Bắt Đầu Học Thôi! 🎉' : 'Đăng Nhập Ngay 🚀'}
               </Button3D>
             </form>
