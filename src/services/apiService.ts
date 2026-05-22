@@ -251,12 +251,21 @@ export const apiService = {
         });
         if (signUpRes.error) throw signUpRes.error;
         
-        return {
+        const newParent = {
           id: signUpRes.data.user!.id,
           email: signUpRes.data.user!.email!,
           full_name: 'Phụ Huynh',
           created_at: signUpRes.data.user!.created_at || new Date().toISOString()
         };
+
+        // Đồng thời chèn dữ liệu vào bảng public.profiles
+        try {
+          await supabase.from('profiles').insert([newParent]);
+        } catch (insertErr) {
+          console.error('Lỗi khi tự động chèn profiles:', insertErr);
+        }
+        
+        return newParent;
       }
 
       return {

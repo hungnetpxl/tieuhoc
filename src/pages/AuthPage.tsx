@@ -80,8 +80,8 @@ export const AuthPage: React.FC = () => {
       } else {
         await signIn(email);
       }
-    } catch (err) {
-      alert('Có lỗi xảy ra, vui lòng thử lại!');
+    } catch (err: any) {
+      alert(`Có lỗi xảy ra: ${err.message || err || 'Vui lòng thử lại!'}`);
     }
   };
 
@@ -95,8 +95,8 @@ export const AuthPage: React.FC = () => {
       setNewChildName('');
       setSelectedAvatar('dino');
       navigate('/map'); // Trỏ trực tiếp bé vào đảo toán học học ngay
-    } catch (err) {
-      alert('Không thể tạo hồ sơ bé!');
+    } catch (err: any) {
+      alert(`Không thể tạo hồ sơ bé: ${err.message || err}`);
     }
   };
 
