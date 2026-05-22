@@ -7,16 +7,51 @@ import { RewardEngine } from '../engine/reward';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-const isSupabaseConfigured = supabaseUrl !== '' && supabaseAnonKey !== '';
+// Kiểm tra chi tiết và loại bỏ các giá trị placeholder hoặc chuỗi "undefined" do bundler tạo ra
+const isSupabaseConfigured = 
+  supabaseUrl !== '' && 
+  supabaseAnonKey !== '' && 
+  supabaseUrl !== 'undefined' && 
+  supabaseAnonKey !== 'undefined' &&
+  !supabaseUrl.includes('your-supabase-url') &&
+  !supabaseAnonKey.includes('your-supabase-anon-key');
+
 export const supabase = isSupabaseConfigured 
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
+// Biến trạng thái có thể thay đổi động trong phiên hoạt động
+export let isSupabaseActive = isSupabaseConfigured;
+
+export const setSupabaseActive = (active: boolean) => {
+  isSupabaseActive = active;
+  console.log(`🔌 Chế độ hoạt động đã được chuyển sang: ${active ? '🟢 Supabase Online' : '💾 Local Mock Offline'}`);
+};
+
 console.log(
-  isSupabaseConfigured 
+  isSupabaseActive 
     ? '🟢 Supabase đã được kết nối thành công!' 
     : '🟡 Đang chạy chế độ Local Mock (Lưu trữ bằng Trình duyệt LocalStorage)'
 );
+
+// Wrapper an toàn giúp dự phòng tự động chuyển sang Local Mock nếu Supabase nổ lỗi runtime
+async function runWithFallback<T>(
+  supabaseCall: () => Promise<T>,
+  localFallback: () => Promise<T> | T,
+  methodName: string
+): Promise<T> {
+  if (supabase && isSupabaseActive) {
+    try {
+      return await supabaseCall();
+    } catch (err: any) {
+      console.warn(`⚠️ Supabase error in apiService.${methodName}, switching to Local Mock:`, err);
+      // Vô hiệu hóa Supabase cho phần còn lại của phiên làm việc này để tăng hiệu năng và tránh lặp lỗi
+      isSupabaseActive = false;
+      return await localFallback();
+    }
+  }
+  return await localFallback();
+}
 
 // 2. PHẦN MOCK DATABASE TRONG LOCALSTORAGE
 class LocalStorageMockDb {
@@ -216,135 +251,150 @@ export const apiService = {
   
   // --- AUTHENTICATION FLOW ---
   getCurrentParent: async (): Promise<ParentProfile | null> => {
-    if (supabase) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        return {
-          id: user.id,
-          email: user.email!,
-          full_name: user.user_metadata?.full_name || 'Phụ Huynh',
-          created_at: user.created_at || new Date().toISOString()
-        };
-      }
-      return null;
-    }
-    
-    // Local Fallback
-    return mockDb.getParent();
+    return runWithFallback<ParentProfile | null>(
+      async (): Promise<ParentProfile | null> => {
+        const { data: { user }, error } = await supabase!.auth.getUser();
+        if (error) throw error;
+        if (user) {
+          return {
+            id: user.id,
+            email: user.email!,
+            full_name: user.user_metadata?.full_name || 'Phụ Huynh',
+            created_at: user.created_at || new Date().toISOString()
+          };
+        }
+        return null;
+      },
+      () => mockDb.getParent(),
+      'getCurrentParent'
+    );
   },
 
   signInParent: async (email: string): Promise<ParentProfile> => {
-    if (supabase) {
-      // Để trải nghiệm nhanh, ta có thể dùng signin qua OTP hoặc password giả định.
-      // Dưới đây giả lập quá trình Auth Supabase qua password mặc định hoặc liên kết.
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password: 'Password123!' // Mật khẩu chung
-      });
-
-      if (error) {
-        // Nếu chưa có tài khoản, tự động tạo mới
-        const signUpRes = await supabase.auth.signUp({
+    return runWithFallback<ParentProfile>(
+      async (): Promise<ParentProfile> => {
+        const { data, error } = await supabase!.auth.signInWithPassword({
           email,
-          password: 'Password123!',
-          options: { data: { full_name: 'Phụ Huynh' } }
+          password: 'Password123!' // Mật khẩu chung
         });
-        if (signUpRes.error) throw signUpRes.error;
-        
-        const newParent = {
-          id: signUpRes.data.user!.id,
-          email: signUpRes.data.user!.email!,
-          full_name: 'Phụ Huynh',
-          created_at: signUpRes.data.user!.created_at || new Date().toISOString()
-        };
 
-        // Đồng thời chèn dữ liệu vào bảng public.profiles
-        try {
-          await supabase.from('profiles').insert([newParent]);
-        } catch (insertErr) {
-          console.error('Lỗi khi tự động chèn profiles:', insertErr);
+        if (error) {
+          // Nếu chưa có tài khoản, tự động tạo mới
+          const signUpRes = await supabase!.auth.signUp({
+            email,
+            password: 'Password123!',
+            options: { data: { full_name: 'Phụ Huynh' } }
+          });
+          if (signUpRes.error) throw signUpRes.error;
+          
+          const newParent: ParentProfile = {
+            id: signUpRes.data.user!.id,
+            email: signUpRes.data.user!.email!,
+            full_name: 'Phụ Huynh',
+            created_at: signUpRes.data.user!.created_at || new Date().toISOString()
+          };
+
+          // Đồng thời chèn dữ liệu vào bảng public.parent_profiles
+          try {
+            await supabase!.from('parent_profiles').insert([newParent]);
+          } catch (insertErr) {
+            console.warn('Lỗi khi chèn profiles (có thể đã tồn tại hoặc do RLS):', insertErr);
+          }
+          
+          return newParent;
         }
-        
-        return newParent;
-      }
 
-      return {
-        id: data.user.id,
-        email: data.user.email!,
-        full_name: data.user.user_metadata?.full_name || 'Phụ Huynh',
-        created_at: data.user.created_at || new Date().toISOString()
-      };
-    }
-
-    // Local Fallback
-    const existingParent = mockDb.getParent();
-    if (!existingParent || existingParent.email !== email) {
-      const newParent = {
-        id: 'p_' + Math.random().toString(36).substring(2, 11),
-        email,
-        full_name: 'Phụ Huynh',
-        created_at: new Date().toISOString()
-      };
-      mockDb.setParent(newParent);
-      return newParent;
-    }
-    return existingParent;
+        return {
+          id: data.user.id,
+          email: data.user.email!,
+          full_name: data.user.user_metadata?.full_name || 'Phụ Huynh',
+          created_at: data.user.created_at || new Date().toISOString()
+        };
+      },
+      (): ParentProfile => {
+        const existingParent = mockDb.getParent();
+        if (!existingParent || existingParent.email !== email) {
+          const newParent: ParentProfile = {
+            id: 'p_' + Math.random().toString(36).substring(2, 11),
+            email,
+            full_name: 'Phụ Huynh',
+            created_at: new Date().toISOString()
+          };
+          mockDb.setParent(newParent);
+          return newParent;
+        }
+        return existingParent;
+      },
+      'signInParent'
+    );
   },
 
   signUpParent: async (email: string, fullName: string): Promise<ParentProfile> => {
-    if (supabase) {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password: 'Password123!',
-        options: { data: { full_name: fullName } }
-      });
-      if (error) throw error;
-      
-      // Đồng thời chèn dữ liệu vào bảng public.profiles
-      const newParent = {
-        id: data.user!.id,
-        email: data.user!.email!,
-        full_name: fullName,
-        created_at: data.user!.created_at || new Date().toISOString()
-      };
+    return runWithFallback<ParentProfile>(
+      async (): Promise<ParentProfile> => {
+        const { data, error } = await supabase!.auth.signUp({
+          email,
+          password: 'Password123!',
+          options: { data: { full_name: fullName } }
+        });
+        if (error) throw error;
+        
+        // Đồng thời chèn dữ liệu vào bảng public.parent_profiles
+        const newParent: ParentProfile = {
+          id: data.user!.id,
+          email: data.user!.email!,
+          full_name: fullName,
+          created_at: data.user!.created_at || new Date().toISOString()
+        };
 
-      await supabase.from('profiles').insert([newParent]);
-      return newParent;
-    }
-
-    // Local Fallback
-    const parent = {
-      id: 'p_' + Math.random().toString(36).substring(2, 11),
-      email,
-      full_name: fullName,
-      created_at: new Date().toISOString()
-    };
-    mockDb.setParent(parent);
-    return parent;
+        try {
+          await supabase!.from('parent_profiles').insert([newParent]);
+        } catch (insertErr) {
+          console.warn('Lỗi khi chèn profiles:', insertErr);
+        }
+        return newParent;
+      },
+      (): ParentProfile => {
+        const parent: ParentProfile = {
+          id: 'p_' + Math.random().toString(36).substring(2, 11),
+          email,
+          full_name: fullName,
+          created_at: new Date().toISOString()
+        };
+        mockDb.setParent(parent);
+        return parent;
+      },
+      'signUpParent'
+    );
   },
 
   signOutParent: async (): Promise<void> => {
-    if (supabase) {
-      await supabase.auth.signOut();
-      return;
-    }
-    mockDb.setParent(null);
+    return runWithFallback(
+      async () => {
+        await supabase!.auth.signOut();
+      },
+      () => {
+        mockDb.setParent(null);
+      },
+      'signOutParent'
+    );
   },
 
 
   // --- CHILDREN PROFILES MANAGEMENT ---
   getChildrenProfiles: async (parentId: string): Promise<ChildProfile[]> => {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('children_profiles')
-        .select('*')
-        .eq('parent_id', parentId);
-      if (error) throw error;
-      return data || [];
-    }
-
-    // Local Fallback
-    return mockDb.getChildren(parentId);
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('children_profiles')
+          .select('*')
+          .eq('parent_id', parentId);
+        if (error) throw error;
+        return data || [];
+      },
+      () => mockDb.getChildren(parentId),
+      'getChildrenProfiles'
+    );
   },
 
   createChildProfile: async (parentId: string, name: string, avatar: string): Promise<ChildProfile> => {
@@ -362,40 +412,44 @@ export const apiService = {
       pet_hat: 'none'
     };
 
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('children_profiles')
-        .insert([newChild])
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    }
-
-    // Local Fallback
-    const childWithId: ChildProfile = {
-      id: 'c_' + Math.random().toString(36).substring(2, 11),
-      ...newChild,
-      created_at: new Date().toISOString()
-    };
-    mockDb.addChild(childWithId);
-    return childWithId;
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('children_profiles')
+          .insert([newChild])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      },
+      () => {
+        const childWithId: ChildProfile = {
+          id: 'c_' + Math.random().toString(36).substring(2, 11),
+          ...newChild,
+          created_at: new Date().toISOString()
+        };
+        mockDb.addChild(childWithId);
+        return childWithId;
+      },
+      'createChildProfile'
+    );
   },
 
   updateChildProfile: async (childId: string, fields: Partial<ChildProfile>): Promise<ChildProfile> => {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('children_profiles')
-        .update(fields)
-        .eq('id', childId)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    }
-
-    // Local Fallback
-    return mockDb.updateChild(childId, fields);
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('children_profiles')
+          .update(fields)
+          .eq('id', childId)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      },
+      () => mockDb.updateChild(childId, fields),
+      'updateChildProfile'
+    );
   },
 
 
@@ -411,232 +465,261 @@ export const apiService = {
       stars_earned: 0
     };
 
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('sessions')
-        .insert([newSession])
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    }
-
-    // Local Fallback
-    const sessionWithId: LearningSession = {
-      id: 's_' + Math.random().toString(36).substring(2, 11),
-      ...newSession,
-      started_at: new Date().toISOString()
-    };
-    mockDb.addSession(sessionWithId);
-    return sessionWithId;
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('sessions')
+          .insert([newSession])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      },
+      () => {
+        const sessionWithId: LearningSession = {
+          id: 's_' + Math.random().toString(36).substring(2, 11),
+          ...newSession,
+          started_at: new Date().toISOString()
+        };
+        mockDb.addSession(sessionWithId);
+        return sessionWithId;
+      },
+      'createSession'
+    );
   },
 
   updateSession: async (sessionId: string, fields: Partial<LearningSession>): Promise<LearningSession> => {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('sessions')
-        .update(fields)
-        .eq('id', sessionId)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    }
-
-    // Local Fallback
-    return mockDb.updateSession(sessionId, fields);
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('sessions')
+          .update(fields)
+          .eq('id', sessionId)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      },
+      () => mockDb.updateSession(sessionId, fields),
+      'updateSession'
+    );
   },
 
 
   // --- QUESTION HISTORY ---
   recordQuestionHistory: async (entry: Omit<QuestionHistoryEntry, 'id' | 'created_at'>): Promise<void> => {
-    if (supabase) {
-      const { error } = await supabase
-        .from('question_history')
-        .insert([entry]);
-      if (error) throw error;
-      return;
-    }
-
-    // Local Fallback
-    const record: QuestionHistoryEntry = {
-      id: 'qh_' + Math.random().toString(36).substring(2, 11),
-      ...entry,
-      created_at: new Date().toISOString()
-    };
-    mockDb.addHistory(record);
+    return runWithFallback(
+      async () => {
+        const { error } = await supabase!
+          .from('question_history')
+          .insert([entry]);
+        if (error) throw error;
+      },
+      () => {
+        const record: QuestionHistoryEntry = {
+          id: 'qh_' + Math.random().toString(36).substring(2, 11),
+          ...entry,
+          created_at: new Date().toISOString()
+        };
+        mockDb.addHistory(record);
+      },
+      'recordQuestionHistory'
+    );
   },
 
   getQuestionHistory: async (childId: string): Promise<QuestionHistoryEntry[]> => {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('question_history')
-        .select('*')
-        .eq('child_id', childId)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data || [];
-    }
-
-    // Local Fallback
-    return mockDb.getHistory(childId);
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('question_history')
+          .select('*')
+          .eq('child_id', childId)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        return data || [];
+      },
+      () => mockDb.getHistory(childId),
+      'getQuestionHistory'
+    );
   },
 
 
   // --- MISTAKES (FOR ADAPTIVE LEARNING) ---
   getMistakes: async (childId: string): Promise<ChildMistake[]> => {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('mistakes')
-        .select('*')
-        .eq('child_id', childId);
-      if (error) throw error;
-      return data || [];
-    }
-
-    // Local Fallback
-    return mockDb.getMistakes(childId);
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('mistakes')
+          .select('*')
+          .eq('child_id', childId);
+        if (error) throw error;
+        return data || [];
+      },
+      () => mockDb.getMistakes(childId),
+      'getMistakes'
+    );
   },
 
   recordMistake: async (childId: string, mathType: MathType, numA: number, numB: number, op: string): Promise<void> => {
-    if (supabase) {
-      // Logic UPSERT trong Postgres
-      const { error } = await supabase.rpc('record_mistake_upsert', {
-        p_child_id: childId,
-        p_math_type: mathType,
-        p_num_a: numA,
-        p_num_b: numB,
-        p_op: op
-      });
-      
-      // Nếu RPC chưa được định nghĩa trên Supabase, dùng API chuẩn:
-      if (error) {
-        const { data: existing } = await supabase
-          .from('mistakes')
-          .select('*')
-          .match({ child_id: childId, math_type: mathType, number_a: numA, number_b: numB, operator: op })
-          .maybeSingle();
+    return runWithFallback(
+      async () => {
+        // Logic UPSERT trong Postgres
+        const { error } = await supabase!.rpc('record_mistake_upsert', {
+          p_child_id: childId,
+          p_math_type: mathType,
+          p_num_a: numA,
+          p_num_b: numB,
+          p_op: op
+        });
+        
+        // Nếu RPC chưa được định nghĩa trên Supabase, dùng API chuẩn:
+        if (error) {
+          const { data: existing } = await supabase!
+            .from('mistakes')
+            .select('*')
+            .match({ child_id: childId, math_type: mathType, number_a: numA, number_b: numB, operator: op })
+            .maybeSingle();
 
-        if (existing) {
-          await supabase
-            .from('mistakes')
-            .update({ wrong_count: existing.wrong_count + 1, last_attempt_correct: false, updated_at: new Date().toISOString() })
-            .eq('id', existing.id);
-        } else {
-          await supabase
-            .from('mistakes')
-            .insert([{
-              child_id: childId,
-              math_type: mathType,
-              number_a: numA,
-              number_b: numB,
-              operator: op,
-              wrong_count: 1,
-              last_attempt_correct: false
-            }]);
+          if (existing) {
+            await supabase!
+              .from('mistakes')
+              .update({ wrong_count: existing.wrong_count + 1, last_attempt_correct: false, updated_at: new Date().toISOString() })
+              .eq('id', existing.id);
+          } else {
+            await supabase!
+              .from('mistakes')
+              .insert([{
+                child_id: childId,
+                math_type: mathType,
+                number_a: numA,
+                number_b: numB,
+                operator: op,
+                wrong_count: 1,
+                last_attempt_correct: false
+              }]);
+          }
         }
-      }
-      return;
-    }
-
-    // Local Fallback
-    mockDb.addOrUpdateMistake(childId, mathType, numA, numB, op);
+      },
+      () => {
+        mockDb.addOrUpdateMistake(childId, mathType, numA, numB, op);
+      },
+      'recordMistake'
+    );
   },
 
   resolveMistake: async (childId: string, mathType: MathType, numA: number, numB: number, op: string): Promise<void> => {
-    if (supabase) {
-      await supabase
-        .from('mistakes')
-        .update({ last_attempt_correct: true, updated_at: new Date().toISOString() })
-        .match({ child_id: childId, math_type: mathType, number_a: numA, number_b: numB, operator: op });
-      return;
-    }
-
-    // Local Fallback
-    mockDb.resolveMistake(childId, mathType, numA, numB, op);
+    return runWithFallback(
+      async () => {
+        await supabase!
+          .from('mistakes')
+          .update({ last_attempt_correct: true, updated_at: new Date().toISOString() })
+          .match({ child_id: childId, math_type: mathType, number_a: numA, number_b: numB, operator: op });
+      },
+      () => {
+        mockDb.resolveMistake(childId, mathType, numA, numB, op);
+      },
+      'resolveMistake'
+    );
   },
 
   clearMistakes: async (childId: string): Promise<void> => {
-    if (supabase) {
-      await supabase
-        .from('mistakes')
-        .delete()
-        .eq('child_id', childId);
-      return;
-    }
-
-    // Local Fallback
-    mockDb.clearMistakes(childId);
+    return runWithFallback(
+      async () => {
+        await supabase!
+          .from('mistakes')
+          .delete()
+          .eq('child_id', childId);
+      },
+      () => {
+        mockDb.clearMistakes(childId);
+      },
+      'clearMistakes'
+    );
   },
 
 
   // --- BADGES ---
   getChildrenBadges: async (childId: string): Promise<ChildBadge[]> => {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('children_badges')
-        .select('*, badge:badges(*)')
-        .eq('child_id', childId);
-      if (error) throw error;
-      return data || [];
-    }
-
-    // Local Fallback
-    return mockDb.getBadges(childId);
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('children_badges')
+          .select('*, badge:badges(*)')
+          .eq('child_id', childId);
+        if (error) throw error;
+        return data || [];
+      },
+      () => mockDb.getBadges(childId),
+      'getChildrenBadges'
+    );
   },
 
   unlockBadge: async (childId: string, badgeId: string): Promise<ChildBadge> => {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('children_badges')
-        .insert([{ child_id: childId, badge_id: badgeId }])
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    }
-
-    // Local Fallback
-    return mockDb.unlockBadge(childId, badgeId);
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('children_badges')
+          .insert([{ child_id: childId, badge_id: badgeId }])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      },
+      () => mockDb.unlockBadge(childId, badgeId),
+      'unlockBadge'
+    );
   },
 
 
   // --- STATISTICS ---
   getStatistics: async (childId: string): Promise<ChildStatistics> => {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('statistics')
-        .select('*')
-        .eq('child_id', childId)
-        .maybeSingle();
-      
-      if (error) throw error;
-      if (data) return data;
-    }
-
-    // Local Fallback
-    return mockDb.getStats(childId);
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('statistics')
+          .select('*')
+          .eq('child_id', childId)
+          .maybeSingle();
+        
+        if (error) throw error;
+        if (data) return data;
+        
+        // Tạo mặc định nếu chưa có
+        const history = await apiService.getQuestionHistory(childId);
+        const nextStats = AnalyticsEngine.aggregateStatistics(childId, history);
+        const insertRes = await supabase!
+          .from('statistics')
+          .insert([nextStats])
+          .select()
+          .single();
+        return insertRes.data || nextStats;
+      },
+      () => mockDb.getStats(childId),
+      'getStatistics'
+    );
   },
 
   refreshStatistics: async (childId: string): Promise<ChildStatistics> => {
     const history = await apiService.getQuestionHistory(childId);
     const currentStats = await apiService.getStatistics(childId);
-    
     const nextStats = AnalyticsEngine.aggregateStatistics(childId, history, currentStats);
 
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('statistics')
-        .upsert([nextStats])
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    }
-
-    // Local Fallback
-    mockDb.saveStats(nextStats);
-    return nextStats;
+    return runWithFallback(
+      async () => {
+        const { data, error } = await supabase!
+          .from('statistics')
+          .upsert([nextStats])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      },
+      () => {
+        mockDb.saveStats(nextStats);
+        return nextStats;
+      },
+      'refreshStatistics'
+    );
   }
 };
 export default apiService;

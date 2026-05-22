@@ -5,6 +5,7 @@ import { Button3D } from '../components/Button3D';
 import { DinoPet } from '../components/DinoPet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { slideUpVariants, popInVariants } from '../animations/presets';
+import { isSupabaseActive, setSupabaseActive } from '../services/apiService';
 
 export const AuthPage: React.FC = () => {
   const navigate = useNavigate();
@@ -29,6 +30,15 @@ export const AuthPage: React.FC = () => {
   const [newChildName, setNewChildName] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState('dino');
 
+  // Database Connection Mode State
+  const [supabaseActive, setSupabaseActiveState] = useState(isSupabaseActive);
+
+  const toggleDatabaseMode = () => {
+    const nextState = !supabaseActive;
+    setSupabaseActive(nextState);
+    setSupabaseActiveState(nextState);
+  };
+
   // Parent Gate Lock (Cổng phụ huynh)
   const [showParentGate, setShowParentGate] = useState(false);
   const [gateQuestion, setGateQuestion] = useState({ a: 0, b: 0, ans: 0 });
@@ -37,6 +47,8 @@ export const AuthPage: React.FC = () => {
 
   useEffect(() => {
     initialize();
+    // Đồng bộ lại trạng thái database khi trang mount
+    setSupabaseActiveState(isSupabaseActive);
   }, [initialize]);
 
   useEffect(() => {
@@ -189,6 +201,21 @@ export const AuthPage: React.FC = () => {
               <Button3D variant="primary" type="submit" size="lg" className="w-full text-lg mt-2" disabled={isLoading}>
                 {isLoading ? 'Đang tải...' : isRegistering ? 'Bắt Đầu Học Thôi! 🎉' : 'Đăng Nhập Ngay 🚀'}
               </Button3D>
+
+              {/* Nhãn hiển thị chế độ cơ sở dữ liệu và cho phép đổi thủ công */}
+              <div className="flex justify-center mt-4">
+                <button
+                  type="button"
+                  onClick={toggleDatabaseMode}
+                  title="Click để chuyển đổi chế độ Lưu trữ dữ liệu"
+                  className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-black border-2 transition-all hover:scale-105 shadow-sm ${supabaseActive ? 'bg-[#e3f2fd] border-[#90caf9] text-[#1976d2]' : 'bg-[#fff3e0] border-[#ffe0b2] text-[#e65100]'}`}
+                >
+                  {supabaseActive ? '☁️ Đám Mây (Supabase)' : '💾 Máy Bé (LocalStorage)'}
+                  <span className="text-[10px] bg-white px-1.5 py-0.5 rounded-full border border-black/10 select-none ml-1">
+                    Đổi
+                  </span>
+                </button>
+              </div>
             </form>
           </motion.div>
         ) : (

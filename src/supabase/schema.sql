@@ -1,11 +1,12 @@
 -- Supabase PostgreSQL Database Schema
 -- Website Học Toán Lớp 1 (Duolingo Kids Style)
+-- Phiên bản: Cập nhật an toàn (Repeatable) tránh xung đột bảng "profiles" bằng "parent_profiles"
 
 -- BẬT CÁC EXTENSION CẦN THIẾT
 create extension if not exists "uuid-ossp";
 
--- 1. BẢNG PHỤ HUYNH (PROFILES) - Liên kết với Supabase Auth users
-create table public.profiles (
+-- 1. BẢNG PHỤ HUYNH (PARENT_PROFILES) - Liên kết với Supabase Auth users
+create table if not exists public.parent_profiles (
     id uuid references auth.users on delete cascade primary key,
     email text not null unique,
     full_name text,
@@ -13,19 +14,28 @@ create table public.profiles (
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- Bật RLS cho profiles
-alter table public.profiles enable row level security;
+-- Bật RLS cho parent_profiles
+alter table public.parent_profiles enable row level security;
 
-create policy "Users can view their own profile." on public.profiles
+-- Dọn dẹp policy cũ trước khi tạo để tránh lỗi trùng lặp
+drop policy if exists "Users can view their own profile." on public.parent_profiles;
+drop policy if exists "Users can update their own profile." on public.parent_profiles;
+drop policy if exists "Users can insert their own profile." on public.parent_profiles;
+
+create policy "Users can view their own profile." on public.parent_profiles
     for select using (auth.uid() = id);
 
-create policy "Users can update their own profile." on public.profiles
+create policy "Users can update their own profile." on public.parent_profiles
     for update using (auth.uid() = id);
 
+create policy "Users can insert their own profile." on public.parent_profiles
+    for insert with check (auth.uid() = id);
+
+
 -- 2. BẢNG HỒ SƠ CỦA BÉ (CHILDREN_PROFILES)
-create table public.children_profiles (
+create table if not exists public.children_profiles (
     id uuid default uuid_generate_v4() primary key,
-    parent_id uuid references public.profiles(id) on delete cascade not null,
+    parent_id uuid references public.parent_profiles(id) on delete cascade not null,
     name text not null,
     avatar text not null, -- emoji hoặc tên ảnh đại diện (vd: 'dino', 'unicorn', 'fox')
     level integer default 1 not null,
@@ -40,10 +50,16 @@ create table public.children_profiles (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
-create index idx_children_parent on public.children_profiles(parent_id);
+-- Tạo Index an toàn
+create index if not exists idx_children_parent on public.children_profiles(parent_id);
 
 -- Bật RLS cho children_profiles
 alter table public.children_profiles enable row level security;
+
+drop policy if exists "Parents can view their children profiles." on public.children_profiles;
+drop policy if exists "Parents can insert their children profiles." on public.children_profiles;
+drop policy if exists "Parents can update their children profiles." on public.children_profiles;
+drop policy if exists "Parents can delete their children profiles." on public.children_profiles;
 
 create policy "Parents can view their children profiles." on public.children_profiles
     for select using (auth.uid() = parent_id);
@@ -57,8 +73,9 @@ create policy "Parents can update their children profiles." on public.children_p
 create policy "Parents can delete their children profiles." on public.children_profiles
     for delete using (auth.uid() = parent_id);
 
+
 -- 3. BẢNG PHIÊN HỌC (SESSIONS)
-create table public.sessions (
+create table if not exists public.sessions (
     id uuid default uuid_generate_v4() primary key,
     child_id uuid references public.children_profiles(id) on delete cascade not null,
     status text not null check (status in ('active', 'completed', 'failed')),
@@ -71,9 +88,12 @@ create table public.sessions (
     ended_at timestamp with time zone
 );
 
-create index idx_sessions_child on public.sessions(child_id);
+create index if not exists idx_sessions_child on public.sessions(child_id);
 
 alter table public.sessions enable row level security;
+
+drop policy if exists "Parents can view their children sessions." on public.sessions;
+drop policy if exists "Parents can insert/update their children sessions." on public.sessions;
 
 create policy "Parents can view their children sessions." on public.sessions
     for select using (
@@ -93,8 +113,9 @@ create policy "Parents can insert/update their children sessions." on public.ses
         )
     );
 
+
 -- 4. BẢNG NHẬT KÝ CÂU HỎI (QUESTION_HISTORY)
-create table public.question_history (
+create table if not exists public.question_history (
     id uuid default uuid_generate_v4() primary key,
     session_id uuid references public.sessions(id) on delete cascade not null,
     child_id uuid references public.children_profiles(id) on delete cascade not null,
@@ -109,10 +130,13 @@ create table public.question_history (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
-create index idx_qhistory_child on public.question_history(child_id);
-create index idx_qhistory_session on public.question_history(session_id);
+create index if not exists idx_qhistory_child on public.question_history(child_id);
+create index if not exists idx_qhistory_session on public.question_history(session_id);
 
 alter table public.question_history enable row level security;
+
+drop policy if exists "Parents can view children question history." on public.question_history;
+drop policy if exists "Parents can insert/update question history." on public.question_history;
 
 create policy "Parents can view children question history." on public.question_history
     for select using (
@@ -132,8 +156,9 @@ create policy "Parents can insert/update question history." on public.question_h
         )
     );
 
+
 -- 5. BẢNG QUẢN LÝ LỖI SAI (MISTAKES) - Phục vụ Adaptive Learning
-create table public.mistakes (
+create table if not exists public.mistakes (
     id uuid default uuid_generate_v4() primary key,
     child_id uuid references public.children_profiles(id) on delete cascade not null,
     math_type text not null,
@@ -145,9 +170,11 @@ create table public.mistakes (
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
-create unique index idx_mistakes_unique on public.mistakes(child_id, math_type, number_a, number_b, operator);
+create unique index if not exists idx_mistakes_unique on public.mistakes(child_id, math_type, number_a, number_b, operator);
 
 alter table public.mistakes enable row level security;
+
+drop policy if exists "Parents can view/update mistakes." on public.mistakes;
 
 create policy "Parents can view/update mistakes." on public.mistakes
     for all using (
@@ -158,8 +185,9 @@ create policy "Parents can view/update mistakes." on public.mistakes
         )
     );
 
+
 -- 6. DANH MỤC HUY HIỆU (BADGES)
-create table public.badges (
+create table if not exists public.badges (
     id text primary key,
     title text not null,
     description text not null,
@@ -167,7 +195,7 @@ create table public.badges (
     reward_stars integer default 10 not null
 );
 
--- Chèn dữ liệu huy hiệu mặc định
+-- Chèn dữ liệu huy hiệu mặc định (Không lỗi trùng lặp do ON CONFLICT)
 insert into public.badges (id, title, description, icon_emoji, reward_stars) values
 ('first_victory', 'Chiến thắng đầu tiên', 'Hoàn thành bài học đầu tiên với số tim tối đa!', '🏆', 10),
 ('addition_master', 'Thần đồng Phép Cộng', 'Hoàn thành 5 bài học phép cộng xuất sắc!', '➕', 20),
@@ -177,17 +205,21 @@ insert into public.badges (id, title, description, icon_emoji, reward_stars) val
 ('speed_demon', 'Tốc độ tia chớp', 'Hoàn thành bài học dưới 60 giây!', '⚡', 25)
 on conflict (id) do nothing;
 
+
 -- 7. BẢNG HUY HIỆU ĐÃ ĐẠT ĐƯỢC (CHILDREN_BADGES)
-create table public.children_badges (
+create table if not exists public.children_badges (
     id uuid default uuid_generate_v4() primary key,
     child_id uuid references public.children_profiles(id) on delete cascade not null,
     badge_id text references public.badges(id) on delete cascade not null,
     unlocked_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
-create unique index idx_children_badge_unique on public.children_badges(child_id, badge_id);
+create unique index if not exists idx_children_badge_unique on public.children_badges(child_id, badge_id);
 
 alter table public.children_badges enable row level security;
+
+drop policy if exists "Parents can view children badges." on public.children_badges;
+drop policy if exists "Parents can insert children badges." on public.children_badges;
 
 create policy "Parents can view children badges." on public.children_badges
     for select using (
@@ -207,8 +239,9 @@ create policy "Parents can insert children badges." on public.children_badges
         )
     );
 
+
 -- 8. BẢNG THỐNG KÊ (STATISTICS) - Cập nhật tự động/qua API để vẽ biểu đồ nhanh
-create table public.statistics (
+create table if not exists public.statistics (
     child_id uuid references public.children_profiles(id) on delete cascade primary key,
     total_sessions integer default 0 not null,
     total_questions integer default 0 not null,
@@ -221,6 +254,9 @@ create table public.statistics (
 );
 
 alter table public.statistics enable row level security;
+
+drop policy if exists "Parents can view children statistics." on public.statistics;
+drop policy if exists "Parents can insert/update statistics." on public.statistics;
 
 create policy "Parents can view children statistics." on public.statistics
     for select using (
@@ -240,15 +276,20 @@ create policy "Parents can insert/update statistics." on public.statistics
         )
     );
 
+
 -- TRIGGER TỰ ĐỘNG TẠO STATISTICS KHI TẠO HỒ SƠ BÉ
 create or replace function public.handle_new_child_profile()
 returns trigger as $$
 begin
     insert into public.statistics (child_id)
-    values (new.id);
+    values (new.id)
+    on conflict (child_id) do nothing;
     return new;
 end;
 $$ language plpgsql security definer;
+
+-- Drop trigger trước khi tạo lại để tránh lỗi
+drop trigger if exists on_child_profile_created on public.children_profiles;
 
 create trigger on_child_profile_created
     after insert on public.children_profiles
