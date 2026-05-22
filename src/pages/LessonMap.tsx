@@ -20,7 +20,7 @@ interface IslandNode {
 
 export const LessonMap: React.FC = () => {
   const navigate = useNavigate();
-  const { currentChild, refillLives } = useAuthStore();
+  const { currentChild, refillLives, selectChild } = useAuthStore();
   const { startNewSession, isLoading } = useGameStore();
 
   const [selectedIsland, setSelectedIsland] = useState<IslandNode | null>(null);
@@ -267,7 +267,7 @@ export const LessonMap: React.FC = () => {
         <Button3D variant="ghost" size="md" className="bg-white/80 border-2 border-[#e5e5e5]" onClick={triggerParentGate}>
           ⚙️ Dành cho Bố Mẹ
         </Button3D>
-        <Button3D variant="ghost" size="md" className="bg-white/80 border-2 border-[#e5e5e5]" onClick={() => navigate('/')}>
+        <Button3D variant="ghost" size="md" className="bg-white/80 border-2 border-[#e5e5e5]" onClick={() => { selectChild(null); navigate('/'); }}>
           👶 Đổi Tài Khoản Bé
         </Button3D>
       </div>

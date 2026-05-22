@@ -16,7 +16,7 @@ interface AuthState {
   signUp: (email: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
   addChild: (name: string, avatar: string) => Promise<void>;
-  selectChild: (childId: string) => void;
+  selectChild: (childId: string | null) => void;
   updateChildStats: (xpGained: number, starsGained: number, updateLevel?: boolean) => Promise<void>;
   deductChildLife: () => Promise<void>;
   refillLives: (costStars: number) => Promise<boolean>;
@@ -148,7 +148,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  selectChild: (childId: string) => {
+  selectChild: (childId: string | null) => {
+    if (!childId) {
+      set({ currentChild: null });
+      localStorage.removeItem('selected_child_id');
+      return;
+    }
     const { children } = get();
     const child = children.find(c => c.id === childId) || null;
     if (child) {
